@@ -1,9 +1,9 @@
 
 typedef struct _histogram
 {
-	uint32_t R[256];
-	uint32_t G[256];
-	uint32_t B[256];
+	uint R[256];
+	uint G[256];
+	uint B[256];
 }
 histogram;
 
@@ -14,13 +14,28 @@ __kernel void calc_histogram(__global const uchar *img,
     const uint i = get_global_id(0);
     const uint j = get_global_id(1);
 
-    if (a < height && j < width) {
-        __local histogram hist_local = {0};
+    __local histogram hist_local;
+
+    if (i < 3 && j < 256) {
+        switch (i) {
+        case 0:
+            hist_local.R[j] = 0;
+            break;
+        case 1:
+            hist_local.G[j] = 0;
+            break;
+        case 2:
+            hist_local.B[j] = 0;
+            break;
+        }
+    }
+
+    if (i < height && j < width) {
 
         const uint pixel = 4 * (i * width + j);
-        atomic_add(hist_local.R[img[pixel + 2]], 1);
-        atomic_add(hist_local.G[img[pixel + 1]], 1);
-        atomic_add(hist_local.B[img[pixel + 0]], 1);
+        atomic_add(&hist_local.R[img[pixel + 2]], 1);
+        atomic_add(&hist_local.G[img[pixel + 1]], 1);
+        atomic_add(&hist_local.B[img[pixel + 0]], 1);
     }
 
 	barrier(CLK_LOCAL_MEM_FENCE);
@@ -33,13 +48,13 @@ __kernel void calc_histogram(__global const uchar *img,
 
     switch (color) {
     case 0:
-        atomic_add(hist->R[value], hist_local.R[value]);
+        atomic_add(&hist->R[value], hist_local.R[value]);
         break;
     case 1:
-        atomic_add(hist->G[value], hist_local.G[value]);
+        atomic_add(&hist->G[value], hist_local.G[value]);
         break;
     case 2:
-        atomic_add(hist->B[value], hist_local.B[value]);
+        atomic_add(&hist->B[value], hist_local.B[value]);
         break;
     }
 }

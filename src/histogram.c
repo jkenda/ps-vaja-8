@@ -6,6 +6,7 @@
 #include <CL/cl.h>
 #include <time.h>
 #include "FreeImage.h"
+#include "cl_errors.c"
 
 #define BINS 256
 #define MAX_SOURCE_SIZE 16384
@@ -19,6 +20,11 @@ typedef struct
 	uint32_t B[256];
 }
 histogram;
+
+void init()
+{
+	
+}
 
 histogram histogramCPU(uint8_t *image, uint32_t width, uint32_t height)
 {
@@ -63,13 +69,13 @@ histogram histogramGPU(uint8_t *image, uint32_t width, uint32_t height)
 	cl_platform_id	platform_id[10];
 	cl_uint			ret_num_platforms;
 	status = clGetPlatformIDs(10, platform_id, &ret_num_platforms);
-	printf("ids: %d\n", status);
+	printf("ids: %s\n", cl_error(status));
 
 	// Podatki o napravi
 	cl_device_id	device_id[10];
 	cl_uint			ret_num_devices;
 	status = clGetDeviceIDs(platform_id[0], CL_DEVICE_TYPE_GPU, 10, device_id, &ret_num_devices);
-	printf("devices: %d\n", status);
+	printf("devices: %s\n", cl_error(status));
 
 	// Kontekst
 	cl_context context = clCreateContext(NULL, 1, &device_id[0], NULL, NULL, NULL);
@@ -91,19 +97,21 @@ histogram histogramGPU(uint8_t *image, uint32_t width, uint32_t height)
 
 	// Prevajanje
 	status = clBuildProgram(program, 1, &device_id[0], NULL, NULL, NULL);
-	printf("build: %d\n", status);
+	printf("build: %s\n", cl_error(status));
 
-	// Log
-	size_t build_log_len;
-	char *build_log;
-	status = clGetProgramBuildInfo(program, device_id[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &build_log_len);
+	if (status != 0) {
+		// Log
+		size_t build_log_len;
+		char *build_log;
+		status = clGetProgramBuildInfo(program, device_id[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &build_log_len);
 
-	build_log = (char *) malloc(sizeof(char)*(build_log_len + 1));
-	clGetProgramBuildInfo(program, device_id[0], CL_PROGRAM_BUILD_LOG, build_log_len, build_log, NULL);
-	//printf("%s\n", build_log);
-	free(build_log);
-	if(build_log_len > 2)	
-		exit(3);
+		build_log = (char *) malloc(build_log_len + 1);
+		clGetProgramBuildInfo(program, device_id[0], CL_PROGRAM_BUILD_LOG, build_log_len, build_log, NULL);
+		printf("%s\n", build_log);
+		free(build_log);
+		if(build_log_len > 2)	
+			exit(3);
+	}
 
 	// kernel: priprava objekta
 	cl_kernel kernel = clCreateKernel(program, "calc_histogram", NULL);
@@ -113,18 +121,18 @@ histogram histogramGPU(uint8_t *image, uint32_t width, uint32_t height)
 	status |= clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *) &hist_mem_obj);
 	status |= clSetKernelArg(kernel, 2, sizeof(cl_uint), (void *) &height);
 	status |= clSetKernelArg(kernel, 3, sizeof(cl_uint), (void *) &width);
-	printf("arg: %d\n", status);
+	printf("arg: %s\n", cl_error(status));
 
 	// kernel: zagon
 	status = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_item_size, &local_item_size, 0, NULL, NULL);
-	printf("enqueue: %d\n", status);
+	printf("enqueue: %s\n", cl_error(status));
 
     // Initalize the histogram
     histogram H;
 
 	// Kopiranje rezultatov
 	status = clEnqueueReadBuffer(command_queue, hist_mem_obj, CL_TRUE, 0, sizeof(histogram), &H, 0, NULL, NULL);
-	printf("read: %d\n", status);
+	printf("read: %s\n", cl_error(status));
 
 	// čiščenje
 	clFlush(command_queue);
