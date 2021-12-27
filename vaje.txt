@@ -1,0 +1,10 @@
+sliko razdeli, vsak piksel na svojo nit.
+vsaka delovna skupina naj ima svojo tabelo za histogram:
+R [0 | 1 | 2 | ... | 255]
+G [0 | 1 | 2 | ... | 255]
+B [0 | 1 | 2 | ... | 255]
+__local unsigned int tab[3][256]
+
+SAMO NITI ZNOTRAJ DELOVNE SKUPINE SE LAHKO SINHRONIZIRAJO
+
+v meritve vključi tudi čas prenosa
