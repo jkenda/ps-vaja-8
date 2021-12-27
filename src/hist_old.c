@@ -109,9 +109,9 @@ void histogramGPU(uint8_t *image, histogram *H, const uint32_t width, uint32_t c
 	cl_mem hist_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(histogram), NULL, NULL);
 
 	// Delitev dela
-	size_t local_item_size[2] = { max(WORKGROUP_SIZE, 3), max(WORKGROUP_SIZE, 256) };
-	size_t num_groups[2] = { (height - 1) / local_item_size[0] + 1 , (width - 1) / local_item_size[1] + 1 };
-	size_t global_item_size[2] = { num_groups[0] * local_item_size[0], num_groups[1] * local_item_size[1] };
+	size_t local_item_size[] = { max(WORKGROUP_SIZE, 3), max(WORKGROUP_SIZE, 256) };
+	size_t num_groups[] = { (height - 1) / local_item_size[0] + 1 , (width - 1) / local_item_size[1] + 1 };
+	size_t global_item_size[] = { num_groups[0] * local_item_size[0], num_groups[1] * local_item_size[1] };
 
 	// kernel: argumenti
 	clSetKernelArg(kernel, 0, sizeof(cl_mem),  (void *) &img_mem_obj);

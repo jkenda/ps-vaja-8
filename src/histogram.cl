@@ -1,60 +1,40 @@
 
-typedef struct _histogram
-{
-	uint R[256];
-	uint G[256];
-	uint B[256];
-}
-histogram;
-
-__kernel void calc_histogram(__global const uchar *img, 
-                             __global histogram *hist, 
+__kernel void calc_histogram(__global const uchar *img, __global uint hist[3][256], 
                              uint height, uint width)
 {
-    const uint i = get_global_id(0);
-    const uint j = get_global_id(1);
+    const uint g_i = get_global_id(0);
+    const uint g_j = get_global_id(1);
 
-    __local histogram hist_local;
+    const uint l_i = get_local_id(0);
+    const uint l_j = get_local_id(1);
 
-    if (i < 3 && j < 256) {
-        switch (i) {
-        case 0:
-            hist_local.R[j] = 0;
-            break;
-        case 1:
-            hist_local.G[j] = 0;
-            break;
-        case 2:
-            hist_local.B[j] = 0;
-            break;
+    const uint l_size = get_local_size(1);
+
+    __local uint hist_local[3][256];
+
+    // nastavi lokalne histograme na 0
+    if (l_i < 3) {
+        #pragma unroll
+        for (uint j = l_j; j < 256; j += l_size) {
+            hist_local[l_i][j] = 0;
         }
-    }
-
-    if (i < height && j < width) {
-
-        const uint pixel = 4 * (i * width + j);
-        atomic_add(&hist_local.R[img[pixel + 2]], 1);
-        atomic_add(&hist_local.G[img[pixel + 1]], 1);
-        atomic_add(&hist_local.B[img[pixel + 0]], 1);
     }
 
 	barrier(CLK_LOCAL_MEM_FENCE);
 
-    const uint color = get_local_id(0);
-    const uint value = get_local_id(1);
+    if (g_i < height && g_j < width) {
+        const uint pixel = 4 * (g_i * width + g_j);
+        atomic_add(&hist_local[0][img[pixel + 2]], 1);
+        atomic_add(&hist_local[1][img[pixel + 1]], 1);
+        atomic_add(&hist_local[2][img[pixel + 0]], 1);
+    }
 
-    if (color >= 3) return;
-    if (value >= 256) return;
+	barrier(CLK_LOCAL_MEM_FENCE);
 
-    switch (color) {
-    case 0:
-        atomic_add(&hist->R[value], hist_local.R[value]);
-        break;
-    case 1:
-        atomic_add(&hist->G[value], hist_local.G[value]);
-        break;
-    case 2:
-        atomic_add(&hist->B[value], hist_local.B[value]);
-        break;
+    if (l_i < 3) {
+        #pragma unroll
+        for (uint j = l_j; j < 256; j += l_size) {
+            atomic_add(&hist[l_i][j], hist_local[l_i][j]);
+        }
     }
 }

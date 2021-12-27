@@ -11,44 +11,33 @@
 #define BINS 256
 #define MAX_SOURCE_SIZE 16384
 
-uint32_t workgroup_size;
-
 typedef struct 
 {
 	uint32_t R[256];
 	uint32_t G[256];
 	uint32_t B[256];
 }
-histogram;
+histogram_t;
 
-void init()
+const uint32_t zero = 0U;
+
+typedef struct
 {
-	
+	double t_cpu, t_gpu, speedup;
 }
+perf_t;
 
-histogram histogramCPU(uint8_t *image, uint32_t width, uint32_t height)
+
+cl_context context;
+cl_program program;
+cl_command_queue command_queue;
+cl_kernel kernel;
+cl_mem hist_mem_obj;
+
+uint32_t max(const uint32_t a, const uint32_t b) { return a >= b ? a : b; }
+
+void cl_init()
 {
-    // Initalize the histogram
-    histogram H = {0};
-
-    // Each color channel is 1 byte long, there are 4 channels BLUE, GREEN, RED and ALPHA
-    // The order is BLUE|GREEN|RED|ALPHA for each pixel, we ignore the ALPHA channel when computing the histograms
-	for (int i = 0; i < (height); i++) {
-		for (int j = 0; j < (width); j++)
-		{
-			H.R[image[(i * width + j) * 4 + 2]]++;
-			H.G[image[(i * width + j) * 4 + 1]]++;
-			H.B[image[(i * width + j) * 4 + 0]]++;
-		}
-	}
-
-    return H;
-}
-
-histogram histogramGPU(uint8_t *image, uint32_t width, uint32_t height)
-{
-    char *source_str;
-    size_t source_size;
 	cl_int status;
 
     // branje datoteke
@@ -60,8 +49,8 @@ histogram histogramGPU(uint8_t *image, uint32_t width, uint32_t height)
     }
 
 	// preberi kernel file
-    source_str = (char*) malloc(MAX_SOURCE_SIZE);
-    source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
+    char *source_str = malloc(MAX_SOURCE_SIZE);
+    size_t source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
     source_str[source_size] = '\0';
     fclose(fp);
 
@@ -78,25 +67,16 @@ histogram histogramGPU(uint8_t *image, uint32_t width, uint32_t height)
 	printf("devices: %s\n", cl_error(status));
 
 	// Kontekst
-	cl_context context = clCreateContext(NULL, 1, &device_id[0], NULL, NULL, NULL);
+	context = clCreateContext(NULL, 1, &device_id[0], NULL, NULL, NULL);
 
 	// Ukazna vrsta
-	cl_command_queue command_queue = clCreateCommandQueue(context, device_id[0], 0, NULL);
-
-	// Delitev dela
-	size_t local_item_size = workgroup_size;
-	size_t num_groups = (width * height - 1) / local_item_size + 1;
-	size_t global_item_size = num_groups * local_item_size;
-
-	// Alokacija pomnilnika na napravi
-	cl_mem img_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, width * height * 4, image, NULL);
-	cl_mem hist_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(histogram), NULL, NULL);
+	command_queue = clCreateCommandQueue(context, device_id[0], 0, NULL);
 
 	// Priprava programa
-	cl_program program = clCreateProgramWithSource(context, 1, (const char **) &source_str, NULL, NULL);
+	program = clCreateProgramWithSource(context, 1, (const char **) &source_str, NULL, NULL);
 
 	// Prevajanje
-	status = clBuildProgram(program, 1, &device_id[0], NULL, NULL, NULL);
+	status = clBuildProgram(program, 1, device_id, NULL, NULL, NULL);
 	printf("build: %s\n", cl_error(status));
 
 	if (status != 0) {
@@ -114,53 +94,89 @@ histogram histogramGPU(uint8_t *image, uint32_t width, uint32_t height)
 	}
 
 	// kernel: priprava objekta
-	cl_kernel kernel = clCreateKernel(program, "calc_histogram", NULL);
+	kernel = clCreateKernel(program, "calc_histogram", NULL);
+
+	hist_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(histogram_t), NULL, &status);
+	printf("make buffer: %s\n", cl_error(status));
+
+	free(source_str);
+}
+
+void cl_finalize()
+{
+	clReleaseMemObject(hist_mem_obj);
+	clReleaseKernel(kernel);
+	clReleaseProgram(program);
+	clReleaseCommandQueue(command_queue);
+	clReleaseContext(context);
+}
+
+void histogramCPU(histogram_t *H, uint8_t *image, uint32_t width, uint32_t height, uint32_t wgsize)
+{
+	memset(H, 0, sizeof(histogram_t));
+    // Each color channel is 1 byte long, there are 4 channels BLUE, GREEN, RED and ALPHA
+    // The order is BLUE|GREEN|RED|ALPHA for each pixel, we ignore the ALPHA channel when computing the histograms
+	for (int i = 0; i < height; i++) {
+		for (int j = 0; j < width; j++)
+		{
+			H->R[image[(i * width + j) * 4 + 2]]++;
+			H->G[image[(i * width + j) * 4 + 1]]++;
+			H->B[image[(i * width + j) * 4 + 0]]++;
+		}
+	}
+}
+
+void histogramGPU(histogram_t *H, uint8_t *image, uint32_t width, uint32_t height, uint32_t wgsize)
+{
+	cl_int status;
+
+	// Delitev dela
+	size_t local_item_size[] = { wgsize, wgsize };
+	size_t num_groups[] = { (max(height, 3) - 1) / local_item_size[0] + 1 , (max(width, 256) - 1) / local_item_size[1] + 1 };
+	size_t global_item_size[] = { num_groups[0] * local_item_size[0], num_groups[1] * local_item_size[1] };
+	//printf("global_item_size (%u, %u)\n", global_item_size[0], global_item_size[1]);
+
+	// Alokacija pomnilnika na napravi
+	cl_mem img_mem_obj  = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, width * height * 4, image, &status);
+	//printf("make buffer: %s\n", cl_error(status));
 
 	// kernel: argumenti
-	status  = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *) &img_mem_obj);
-	status |= clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *) &hist_mem_obj);
+	status  = clSetKernelArg(kernel, 0, sizeof(cl_mem),  (void *) &img_mem_obj);
+	status |= clSetKernelArg(kernel, 1, sizeof(cl_mem),  (void *) &hist_mem_obj);
 	status |= clSetKernelArg(kernel, 2, sizeof(cl_uint), (void *) &height);
 	status |= clSetKernelArg(kernel, 3, sizeof(cl_uint), (void *) &width);
-	printf("arg: %s\n", cl_error(status));
+	//printf("arg: %s\n", cl_error(status));
+
+	status = clEnqueueFillBuffer(command_queue, hist_mem_obj, &zero, sizeof(uint32_t), 0, sizeof(histogram_t), 0, NULL, NULL);
+	// printf("fill: %s\n", cl_error(status)); fflush(stdout);
 
 	// kernel: zagon
-	status = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_item_size, &local_item_size, 0, NULL, NULL);
-	printf("enqueue: %s\n", cl_error(status));
-
-    // Initalize the histogram
-    histogram H;
+	status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_item_size, local_item_size, 0, NULL, NULL);
+	// printf("enqueue: %s\n", cl_error(status));
 
 	// Kopiranje rezultatov
-	status = clEnqueueReadBuffer(command_queue, hist_mem_obj, CL_TRUE, 0, sizeof(histogram), &H, 0, NULL, NULL);
-	printf("read: %s\n", cl_error(status));
+	status = clEnqueueReadBuffer(command_queue, hist_mem_obj, CL_TRUE, 0, sizeof(histogram_t), H, 0, NULL, NULL);
+	//printf("read: %s\n", cl_error(status));
 
 	// čiščenje
 	clFlush(command_queue);
 	clFinish(command_queue);
-	clReleaseKernel(kernel);
-	clReleaseProgram(program);
 	clReleaseMemObject(img_mem_obj);
-	clReleaseMemObject(hist_mem_obj);
-	clReleaseCommandQueue(command_queue);
-	clReleaseContext(context);
-    free(source_str);
-
-    return H;
 }
 
-void printHistogram(histogram *H) {
+void printHistogram(histogram_t *H) {
 	printf("Colour\tNo. Pixels\n");
 	for (int i = 0; i < BINS; i++) {
-		if (H->B[i]>0)
+		if (H->B[i] > 0)
 			printf("%dB\t%d\n", i, H->B[i]);
-		if (H->G[i]>0)
+		if (H->G[i] > 0)
 			printf("%dG\t%d\n", i, H->G[i]);
-		if (H->R[i]>0)
+		if (H->R[i] > 0)
 			printf("%dR\t%d\n", i, H->R[i]);
 	}
 }
 
-bool equal(histogram *A, histogram *B)
+bool equal(histogram_t *A, histogram_t *B)
 {
 	for (int i = 0; i < BINS; i++) {
 		if (A->R[i] != B->R[i]) return false;
@@ -170,13 +186,10 @@ bool equal(histogram *A, histogram *B)
 	return true;
 }
 
-double cas_izvajanja(const histogram (*fun)(uint8_t *, uint32_t, uint32_t), 
-					 const char *filename, const uint32_t wgsize, const uint32_t samples)
+perf_t cas_izvajanja(const char *filename, const uint32_t wgsize, const uint32_t samples_cpu, const uint32_t samples_gpu)
 {
     struct timespec start, finish;
-    double elapsed;
-
-	workgroup_size = wgsize;
+    perf_t perf;
 
     // Load image from file
 	FIBITMAP *imageJpeg = FreeImage_Load(FIF_JPEG, filename, 0);
@@ -198,64 +211,66 @@ double cas_izvajanja(const histogram (*fun)(uint8_t *, uint32_t, uint32_t),
 	FreeImage_Unload(imageJpeg);
 
     // Compute and print the histogram
-	histogram A = histogramCPU(image, width, height);
-	histogram B;
+	histogram_t A, B;
 
     clock_gettime(CLOCK_MONOTONIC, &start);
-
-	for (int i = 0; i < samples; i++) {
-    	B = fun(image, width, height);
+	for (int i = 0; i < samples_cpu; i++) {
+		histogramCPU(&A, image, width, height, 0);
 	}
-
     clock_gettime(CLOCK_MONOTONIC, &finish);
 
-    elapsed = (finish.tv_sec - start.tv_sec);
-    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-	
-	//return elapsed / samples;
-    return equal(&A, &B) ? elapsed / samples : -1;
+	perf.t_cpu = (finish.tv_sec - start.tv_sec);
+    perf.t_cpu += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+	perf.t_cpu /= samples_cpu;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
+	for (int i = 0; i < samples_gpu; i++) {
+		memset(&B, 0, sizeof(histogram_t));
+    	histogramGPU(&B, image, width, height, wgsize);
+	}
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    perf.t_gpu = (finish.tv_sec - start.tv_sec);
+    perf.t_gpu += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+	perf.t_gpu /= samples_gpu;
+
+	perf.speedup = perf.t_cpu / perf.t_gpu;
+
+	free(image);
+
+    return equal(&A, &B) ? perf : (perf_t) { 0, 0, 0 };
 }
 
 int main(int argc, const char **argv)
 {
-    double time_640_480cpu   = cas_izvajanja(histogramCPU, "test/640x480.jpg",   0, 100);
-    double time_800_600cpu   = cas_izvajanja(histogramCPU, "test/800x600.jpg",   0, 100);
-    double time_1600_900cpu  = cas_izvajanja(histogramCPU, "test/1600x900.jpg",  0, 100);
-    double time_1920_1080cpu = cas_izvajanja(histogramCPU, "test/1920x1080.jpg", 0, 100);
-    double time_3840_2160cpu = cas_izvajanja(histogramCPU, "test/3840x2160.jpg", 0, 100);
-    double time_8000_8000cpu = cas_izvajanja(histogramCPU, "test/8000x8000.jpg", 0, 100);
+	cl_init();
 
-	puts("sekvenčno");
-    printf("%12s %12s %12s %12s %12s %12s\n",
-		"640x480", "800x600", "1600x900", "1920x1080", "3840x2160", "8000x8000");
-	printf("%12lf %12lf %12lf %12lf %12lf %12lf\n\n",
-		time_640_480cpu, time_800_600cpu, time_1600_900cpu, time_1920_1080cpu, time_3840_2160cpu, time_8000_8000cpu
-	);
-
-	puts("paralelno");
     printf("%7s %12s %12s %12s %12s %12s %12s %s\n",
-		"WG_size", "640x480", "800x600", "1600x900", "1920x1080", "3840x2160", "8000x8000", "pohitritev");
-	
-    for (int wgsize = 16; wgsize <= 512; wgsize *= 2) {
-		double time_640_480gpu   = cas_izvajanja(histogramGPU, "test/640x480.jpg",   wgsize, 1000);
-		double time_800_600gpu   = cas_izvajanja(histogramGPU, "test/800x600.jpg",   wgsize, 1000);
-		double time_1600_900gpu  = cas_izvajanja(histogramGPU, "test/1600x900.jpg",  wgsize, 1000);
-		double time_1920_1080gpu = cas_izvajanja(histogramGPU, "test/1920x1080.jpg", wgsize, 1000);
-		double time_3840_2160gpu = cas_izvajanja(histogramGPU, "test/3840x2160.jpg", wgsize, 1000);
-    	double time_8000_8000gpu = cas_izvajanja(histogramGPU, "test/8000x8000.jpg", wgsize, 1000);
+		"WG size", "640x480", "800x600", "1600x900", "1920x1080", "3840x2160", "8000x8000", "pohitritev");
+	fflush(stdout);
 
-		double pohitritev_640_480   = time_640_480cpu   / time_640_480gpu   ;
-		double pohitritev_800_600   = time_800_600cpu   / time_800_600gpu   ;
-		double pohitritev_1600_900  = time_1600_900cpu  / time_1600_900gpu  ;
-		double pohitritev_1920_1080 = time_1920_1080cpu / time_1920_1080gpu ;
-		double pohitritev_3840_2160 = time_3840_2160cpu / time_3840_2160gpu ;
-		double pohitritev_8000_8000 = time_8000_8000cpu / time_8000_8000gpu ;
+    for (int wgsize = 4; wgsize <= 32; wgsize *= 2) {
+		printf("%7u ", wgsize); fflush(stdout);
+		perf_t perf_640_480gpu   = cas_izvajanja("test/640x480.jpg",   wgsize, 10, 20);
+		printf("%12lf ", perf_640_480gpu.t_gpu); fflush(stdout);
+		perf_t perf_800_600gpu   = cas_izvajanja("test/800x600.jpg",   wgsize, 10, 20);
+		printf("%12lf ", perf_800_600gpu.t_gpu); fflush(stdout);
+		perf_t perf_1600_900gpu  = cas_izvajanja("test/1600x900.jpg",  wgsize, 10, 20);
+		printf("%12lf ", perf_1600_900gpu.t_gpu); fflush(stdout);
+		perf_t perf_1920_1080gpu = cas_izvajanja("test/1920x1080.jpg", wgsize, 10, 20);
+		printf("%12lf ", perf_1920_1080gpu.t_gpu); fflush(stdout);
+		perf_t perf_3840_2160gpu = cas_izvajanja("test/3840x2160.jpg", wgsize, 10, 20);
+		printf("%12lf ", perf_3840_2160gpu.t_gpu); fflush(stdout);
+    	perf_t perf_8000_8000gpu = cas_izvajanja("test/8000x8000.jpg", wgsize, 10, 20);
+		printf("%12lf ", perf_8000_8000gpu.t_gpu); fflush(stdout);
 
-        printf("%7d %12lf %12lf %12lf %12lf %12lf %12lf %.3lf,%.3lf,%.3lf,%.3lf,%.3lf,%.3lf\n",
-            wgsize, time_640_480gpu, time_800_600gpu, time_1600_900gpu, time_1920_1080gpu, time_3840_2160gpu, time_8000_8000gpu,
-			pohitritev_640_480, pohitritev_800_600, pohitritev_1600_900, pohitritev_1920_1080, pohitritev_3840_2160, pohitritev_8000_8000
+        printf("%.3lf,%.3lf,%.3lf,%.3lf,%.3lf,%.3lf\n",
+			perf_640_480gpu.speedup, perf_800_600gpu.speedup, perf_1600_900gpu.speedup, 
+			perf_1920_1080gpu.speedup, perf_3840_2160gpu.speedup, perf_8000_8000gpu.speedup
         );
     }
+
+	cl_finalize();
 
 	return 0;
 }

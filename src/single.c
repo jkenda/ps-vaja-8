@@ -12,7 +12,7 @@ typedef struct
 	uint32_t G[256];
 	uint32_t B[256];
 }
-histogram;
+histogram_t;
 
 void histogramCPU(uint8_t *imageIn, histogram *H, int width, int height)
 {
