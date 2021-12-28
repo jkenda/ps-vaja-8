@@ -6,7 +6,6 @@
 #include <CL/cl.h>
 #include <time.h>
 #include "FreeImage.h"
-#include "cl_errors.c"
 
 #define BINS 256
 #define MAX_SOURCE_SIZE 16384
@@ -33,6 +32,73 @@ cl_program program;
 cl_command_queue command_queue;
 cl_kernel kernel;
 cl_mem hist_mem_obj;
+
+const char *errors[] = {
+    "CL_SUCCESS"                                      ,
+    "CL_DEVICE_NOT_FOUND"                             ,
+    "CL_DEVICE_NOT_AVAILABLE"                         ,
+    "CL_COMPILER_NOT_AVAILABLE"                       ,
+    "CL_MEM_OBJECT_ALLOCATION_FAILURE"                ,
+    "CL_OUT_OF_RESOURCES"                             ,
+    "CL_OUT_OF_HOST_MEMORY"                           ,
+    "CL_PROFILING_INFO_NOT_AVAILABLE"                 ,
+    "CL_MEM_COPY_OVERLAP"                             ,
+    "CL_IMAGE_FORMAT_MISMATCH"                        ,
+    "CL_IMAGE_FORMAT_NOT_SUPPORTED"                   ,
+    "CL_BUILD_PROGRAM_FAILURE"                        ,
+    "CL_MAP_FAILURE"                                  ,
+    "CL_MISALIGNED_SUB_BUFFER_OFFSET"                 ,
+    "CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST"    ,
+    "CL_COMPILE_PROGRAM_FAILURE"                      ,
+    "CL_LINKER_NOT_AVAILABLE"                         ,
+    "CL_LINK_PROGRAM_FAILURE"                         ,
+    "CL_DEVICE_PARTITION_FAILED"                      ,
+    "CL_KERNEL_ARG_INFO_NOT_AVAILABLE"                ,
+    "CL_INVALID_VALUE"                                ,
+    "CL_INVALID_DEVICE_TYPE"                          ,
+    "CL_INVALID_PLATFORM"                             ,
+    "CL_INVALID_DEVICE"                               ,
+    "CL_INVALID_CONTEXT"                              ,
+    "CL_INVALID_QUEUE_PROPERTIES"                     ,
+    "CL_INVALID_COMMAND_QUEUE"                        ,
+    "CL_INVALID_HOST_PTR"                             ,
+    "CL_INVALID_MEM_OBJECT"                           ,
+    "CL_INVALID_IMAGE_FORMAT_DESCRIPTOR"              ,
+    "CL_INVALID_IMAGE_SIZE"                           ,
+    "CL_INVALID_SAMPLER"                              ,
+    "CL_INVALID_BINARY"                               ,
+    "CL_INVALID_BUILD_OPTIONS"                        ,
+    "CL_INVALID_PROGRAM"                              ,
+    "CL_INVALID_PROGRAM_EXECUTABLE"                   ,
+    "CL_INVALID_KERNEL_NAME"                          ,
+    "CL_INVALID_KERNEL_DEFINITION"                    ,
+    "CL_INVALID_KERNEL"                               ,
+    "CL_INVALID_ARG_INDEX"                            ,
+    "CL_INVALID_ARG_VALUE"                            ,
+    "CL_INVALID_ARG_SIZE"                             ,
+    "CL_INVALID_KERNEL_ARGS"                          ,
+    "CL_INVALID_WORK_DIMENSION"                       ,
+    "CL_INVALID_WORK_GROUP_SIZE"                      ,
+    "CL_INVALID_WORK_ITEM_SIZE"                       ,
+    "CL_INVALID_GLOBAL_OFFSET"                        ,
+    "CL_INVALID_EVENT_WAIT_LIST"                      ,
+    "CL_INVALID_EVENT"                                ,
+    "CL_INVALID_OPERATION"                            ,
+    "CL_INVALID_GL_OBJECT"                            ,
+    "CL_INVALID_BUFFER_SIZE"                          ,
+    "CL_INVALID_MIP_LEVEL"                            ,
+    "CL_INVALID_GLOBAL_WORK_SIZE"                     ,
+    "CL_INVALID_PROPERTY"                             ,
+    "CL_INVALID_IMAGE_DESCRIPTOR"                     ,
+    "CL_INVALID_COMPILER_OPTIONS"                     ,
+    "CL_INVALID_LINKER_OPTIONS"                       ,
+    "CL_INVALID_DEVICE_PARTITION_COUNT"               ,
+};
+
+const char *cl_error(int status)
+{
+    return errors[-status];
+}
 
 uint32_t max(const uint32_t a, const uint32_t b) { return a >= b ? a : b; }
 
@@ -251,17 +317,17 @@ int main(int argc, const char **argv)
 
     for (int wgsize = 4; wgsize <= 32; wgsize *= 2) {
 		printf("%7u ", wgsize); fflush(stdout);
-		perf_t perf_640_480gpu   = cas_izvajanja("test/640x480.jpg",   wgsize, 10, 20);
+		perf_t perf_640_480gpu   = cas_izvajanja("test/640x480.jpg",   wgsize, 1, 2);
 		printf("%12lf ", perf_640_480gpu.t_gpu); fflush(stdout);
-		perf_t perf_800_600gpu   = cas_izvajanja("test/800x600.jpg",   wgsize, 10, 20);
+		perf_t perf_800_600gpu   = cas_izvajanja("test/800x600.jpg",   wgsize, 1, 2);
 		printf("%12lf ", perf_800_600gpu.t_gpu); fflush(stdout);
-		perf_t perf_1600_900gpu  = cas_izvajanja("test/1600x900.jpg",  wgsize, 10, 20);
+		perf_t perf_1600_900gpu  = cas_izvajanja("test/1600x900.jpg",  wgsize, 1, 2);
 		printf("%12lf ", perf_1600_900gpu.t_gpu); fflush(stdout);
-		perf_t perf_1920_1080gpu = cas_izvajanja("test/1920x1080.jpg", wgsize, 10, 20);
+		perf_t perf_1920_1080gpu = cas_izvajanja("test/1920x1080.jpg", wgsize, 1, 2);
 		printf("%12lf ", perf_1920_1080gpu.t_gpu); fflush(stdout);
-		perf_t perf_3840_2160gpu = cas_izvajanja("test/3840x2160.jpg", wgsize, 10, 20);
+		perf_t perf_3840_2160gpu = cas_izvajanja("test/3840x2160.jpg", wgsize, 1, 2);
 		printf("%12lf ", perf_3840_2160gpu.t_gpu); fflush(stdout);
-    	perf_t perf_8000_8000gpu = cas_izvajanja("test/8000x8000.jpg", wgsize, 10, 20);
+    	perf_t perf_8000_8000gpu = cas_izvajanja("test/8000x8000.jpg", wgsize, 1, 2);
 		printf("%12lf ", perf_8000_8000gpu.t_gpu); fflush(stdout);
 
         printf("%.3lf,%.3lf,%.3lf,%.3lf,%.3lf,%.3lf\n",
@@ -274,3 +340,16 @@ int main(int argc, const char **argv)
 
 	return 0;
 }
+
+/*
+ids: CL_SUCCESS
+devices: CL_SUCCESS
+build: CL_SUCCESS
+make buffer: CL_SUCCESS
+WG size      640x480      800x600     1600x900    1920x1080    3840x2160    8000x8000 pohitritev
+      4     0.001867     0.002323     0.006757     0.010516     0.041879     0.565632 1.398,1.751,1.805,1.672,1.699,1.518
+      8     0.015547     0.001357     0.003179     0.005027     0.019031     0.348019 0.167,3.000,3.836,3.504,3.737,2.465
+     16     0.015564     0.001321     0.003053     0.004667     0.017340     0.353270 0.167,3.079,3.994,3.774,4.101,2.428
+     32     0.015677     0.001569     0.003977     0.006138     0.023638     0.539223 0.166,2.599,3.067,2.869,3.010,1.591
+
+*/
