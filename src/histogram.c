@@ -198,7 +198,7 @@ void histogramGPU(histogram_t *H, uint8_t *image, uint32_t width, uint32_t heigh
 
 	// Delitev dela
 	size_t local_item_size[] = { wgsize, wgsize };
-	size_t num_groups[] = { (max(height, 3) - 1) / local_item_size[0] + 1 , (max(width, 256) - 1) / local_item_size[1] + 1 };
+	size_t num_groups[] = { (height - 1) / local_item_size[0] + 1 , (width - 1) / local_item_size[1] + 1 };
 	size_t global_item_size[] = { num_groups[0] * local_item_size[0], num_groups[1] * local_item_size[1] };
 	//printf("global_item_size (%u, %u)\n", global_item_size[0], global_item_size[1]);
 
@@ -291,7 +291,6 @@ perf_t cas_izvajanja(const char *filename, const uint32_t wgsize, const uint32_t
 
     clock_gettime(CLOCK_MONOTONIC, &start);
 	for (int i = 0; i < samples_gpu; i++) {
-		memset(&B, 0, sizeof(histogram_t));
     	histogramGPU(&B, image, width, height, wgsize);
 	}
     clock_gettime(CLOCK_MONOTONIC, &finish);
@@ -317,17 +316,17 @@ int main(int argc, const char **argv)
 
     for (int wgsize = 4; wgsize <= 32; wgsize *= 2) {
 		printf("%7u ", wgsize); fflush(stdout);
-		perf_t perf_640_480gpu   = cas_izvajanja("test/640x480.jpg",   wgsize, 1, 2);
+		perf_t perf_640_480gpu   = cas_izvajanja("test/640x480.jpg",   wgsize, 10, 10);
 		printf("%12lf ", perf_640_480gpu.t_gpu); fflush(stdout);
-		perf_t perf_800_600gpu   = cas_izvajanja("test/800x600.jpg",   wgsize, 1, 2);
+		perf_t perf_800_600gpu   = cas_izvajanja("test/800x600.jpg",   wgsize, 10, 10);
 		printf("%12lf ", perf_800_600gpu.t_gpu); fflush(stdout);
-		perf_t perf_1600_900gpu  = cas_izvajanja("test/1600x900.jpg",  wgsize, 1, 2);
+		perf_t perf_1600_900gpu  = cas_izvajanja("test/1600x900.jpg",  wgsize, 10, 10);
 		printf("%12lf ", perf_1600_900gpu.t_gpu); fflush(stdout);
-		perf_t perf_1920_1080gpu = cas_izvajanja("test/1920x1080.jpg", wgsize, 1, 2);
+		perf_t perf_1920_1080gpu = cas_izvajanja("test/1920x1080.jpg", wgsize, 10, 10);
 		printf("%12lf ", perf_1920_1080gpu.t_gpu); fflush(stdout);
-		perf_t perf_3840_2160gpu = cas_izvajanja("test/3840x2160.jpg", wgsize, 1, 2);
+		perf_t perf_3840_2160gpu = cas_izvajanja("test/3840x2160.jpg", wgsize, 10, 10);
 		printf("%12lf ", perf_3840_2160gpu.t_gpu); fflush(stdout);
-    	perf_t perf_8000_8000gpu = cas_izvajanja("test/8000x8000.jpg", wgsize, 1, 2);
+    	perf_t perf_8000_8000gpu = cas_izvajanja("test/8000x8000.jpg", wgsize, 10, 10);
 		printf("%12lf ", perf_8000_8000gpu.t_gpu); fflush(stdout);
 
         printf("%.3lf,%.3lf,%.3lf,%.3lf,%.3lf,%.3lf\n",
